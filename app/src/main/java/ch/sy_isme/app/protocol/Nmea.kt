@@ -4,7 +4,7 @@ import java.util.Locale
 
 enum class ChainDirection { DOWN, UP }
 
-/** Inhalt eines $PXISWND-Satzes (frueher $ISLWND) gemaess Spezifikation V1.8, Kapitel Tx. */
+/** Inhalt eines $PXISWND-Satzes (bis Firmware 1.2.1 $ISLWND) gemaess Spezifikation V1.9, Kapitel Tx. */
 data class WindlassData(
     val chainLengthM: Double,
     val direction: ChainDirection,
@@ -17,7 +17,7 @@ data class WindlassData(
 sealed interface ParseResult {
     data class Data(val data: WindlassData) : ParseResult
 
-    /** Gueltiger Satz mit anderem Adressfeld, z. B. das eigene $ISLWNS. */
+    /** Gueltiger Satz mit anderem Adressfeld, z. B. das eigene $PXISWNS. */
     data class OtherSentence(val address: String) : ParseResult
 
     data class Invalid(val reason: String) : ParseResult
@@ -27,8 +27,8 @@ object Nmea {
     /** Datensatz ab ChainCounter-Firmware 1.3.0. */
     const val DATA_ADDRESS = "PXISWND"
 
-    /** Uebergangsphase: alter Datensatz bis Firmware 1.2.1, spaeter entfernen. */
-    const val DATA_ADDRESS_LEGACY = "ISLWND"
+    /** Kommandos ab ChainCounter-Firmware 1.3.0. */
+    const val COMMAND_ADDRESS = "PXISWNS"
 
     private const val MAX_U32 = 0xFFFFFFFFL
     private val DECIMAL = Regex("""-?\d+(\.\d+)?""")
@@ -52,9 +52,7 @@ object Nmea {
         if (checksum(body) != given.toInt(16)) return ParseResult.Invalid("Checksumme falsch")
 
         val fields = body.split(',')
-        if (fields[0] != DATA_ADDRESS && fields[0] != DATA_ADDRESS_LEGACY) {
-            return ParseResult.OtherSentence(fields[0])
-        }
+        if (fields[0] != DATA_ADDRESS) return ParseResult.OtherSentence(fields[0])
         if (fields.size != 7) return ParseResult.Invalid("${fields.size - 1} statt 6 Felder")
 
         val length = decimal(fields[1]) ?: return ParseResult.Invalid("Kettenlaenge")
