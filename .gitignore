@@ -12,3 +12,7 @@ local.properties
 # Lokaler Signaturschluessel, siehe README
 keystore.properties
 *.p12
+
+# Python
+__pycache__/
+*.pyc
