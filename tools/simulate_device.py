@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Simuliert den ChainCounter (Firmware 1.3.0): sendet 1x pro Sekunde $PXISWND und
-verarbeitet $PXISWNS sowie uebergangsweise $ISLWNS.
+"""Simuliert den ChainCounter (Firmware 1.4.0): sendet 1x pro Sekunde $PXISWND und
+verarbeitet $PXISWNS.
 
 PC und Telefon muessen im selben WLAN sein. Nur Python-Standardbibliothek.
 Beispiel: python3 tools/simulate_device.py --port 1458
@@ -47,7 +47,7 @@ class Device:
         if checksum(body) != int(given, 16):
             return "FEHLER Checksumme"
         fields = body.split(",")
-        if fields[0] not in ("PXISWNS", "ISLWNS"):
+        if fields[0] != "PXISWNS":
             return "ignoriert"
         command, args = fields[1], fields[2:]
         if command == "C" and not args:
@@ -95,7 +95,7 @@ def main() -> None:
         except socket.timeout:
             continue
         text = data.decode("ascii", "replace")
-        if not text.startswith(("$PXISWND", "$ISLWND")):
+        if not text.startswith("$PXISWND"):
             print(f"{sender[0]}: {text} -> {device.handle(text)}", flush=True)
 
 

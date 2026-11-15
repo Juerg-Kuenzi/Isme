@@ -45,16 +45,16 @@ class UdpLinkTest {
         DatagramSocket(0, loopback).use { device ->
             device.soTimeout = 3000
             val port = waitForPort(link)
-            val tx = "\$ISLWND,12.4,0,24.1,17,86400,3605*07".toByteArray()
+            val tx = "\$PXISWND,12.4,0,24.1,17,86400,3605*43".toByteArray()
             device.send(DatagramPacket(tx, tx.size, loopback, port))
 
             val (text, sender) = recorder.sentences.poll(3, TimeUnit.SECONDS)!!
-            assertEquals("\$ISLWND,12.4,0,24.1,17,86400,3605*07", text)
+            assertEquals("\$PXISWND,12.4,0,24.1,17,86400,3605*43", text)
 
-            link.send("\$ISLWNS,C*73", sender, device.localPort)
+            link.send("\$PXISWNS,C*37", sender, device.localPort)
             val packet = DatagramPacket(ByteArray(64), 64)
             device.receive(packet)
-            assertEquals("\$ISLWNS,C*73", String(packet.data, 0, packet.length))
+            assertEquals("\$PXISWNS,C*37", String(packet.data, 0, packet.length))
             assertTrue(recorder.sendResults.poll(3, TimeUnit.SECONDS)!!.isSuccess)
         }
         link.stop()
@@ -66,7 +66,7 @@ class UdpLinkTest {
         link.start()
         waitForPort(link)
         link.stop()
-        link.send("\$ISLWNS,C*73", loopback, 1467)
+        link.send("\$PXISWNS,C*37", loopback, 1467)
         assertTrue(recorder.sendResults.poll(3, TimeUnit.SECONDS)!!.isFailure)
         assertNull(recorder.sentences.poll())
     }

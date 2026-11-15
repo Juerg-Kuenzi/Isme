@@ -18,69 +18,69 @@ class NmeaTest {
     private fun parsed(raw: String): WindlassData = (Nmea.parse(raw) as ParseResult.Data).data
 
     @Test fun parsesFirmwareExample() {
-        val d = parsed("\$ISLWND,12.4,0,24.1,17,86400,3605*07")
+        val d = parsed("\$PXISWND,12.4,0,24.1,17,86400,3605*43")
         assertEquals(WindlassData(12.4, ChainDirection.DOWN, 24.1, 17, 86400, 3605), d)
     }
 
-    @Test fun parsesNewProprietarySentence() {
-        val d = parsed("\$PXISWND,12.4,0,24.1,17,86400,3605*43")
-        assertEquals(WindlassData(12.4, ChainDirection.DOWN, 24.1, 17, 86400, 3605), d)
-        assertTrue(Nmea.parse("\$PXISWND,12.4,0,24.1,17,86400,3605*07") is ParseResult.Invalid)
-        assertEquals(ParseResult.OtherSentence("PXISWNS"), Nmea.parse("\$PXISWNS,C*37"))
+    @Test fun ignoresOldSentenceOfFirmware121() {
+        assertEquals(
+            ParseResult.OtherSentence("ISLWND"),
+            Nmea.parse("\$ISLWND,12.4,0,24.1,17,86400,3605*07"),
+        )
     }
 
     @Test fun parsesDirectionUpNegativeLengthAndLineEnd() {
-        val d = parsed(Nmea.sentence("ISLWND,-1.2,1,12.0,1,0,0") + "\r\n")
+        val d = parsed(Nmea.sentence("PXISWND,-1.2,1,12.0,1,0,0") + "\r\n")
         assertEquals(-1.2, d.chainLengthM, 0.0)
         assertEquals(ChainDirection.UP, d.direction)
     }
 
     @Test fun acceptsLowercaseChecksum() {
-        val body = "ISLWND,1.0,0,12.0,1,0,0"
+        val body = "PXISWND,1.0,0,12.0,1,0,0"
         val text = "%02x".format(Nmea.checksum(body))
         assertTrue(Nmea.parse("$$body*$text") is ParseResult.Data)
     }
 
     @Test fun readsU32PrintedWithPercentD() {
-        assertEquals(4294967295L, parsed(Nmea.sentence("ISLWND,1.0,0,12.0,1,-1,0")).totalRuntimeS)
-        assertEquals(4294967295L, parsed(Nmea.sentence("ISLWND,1.0,0,12.0,1,4294967295,0")).totalRuntimeS)
+        assertEquals(4294967295L, parsed(Nmea.sentence("PXISWND,1.0,0,12.0,1,-1,0")).totalRuntimeS)
+        assertEquals(4294967295L, parsed(Nmea.sentence("PXISWND,1.0,0,12.0,1,4294967295,0")).totalRuntimeS)
     }
 
     @Test fun rejectsBadSentences() {
         val bad = listOf(
-            "ISLWND,12.4,0,24.1,17,86400,3605*07",
-            "\$ISLWND,12.4,0,24.1,17,86400,3605",
-            "\$ISLWND,12.4,0,24.1,17,86400,3605*08",
-            "\$ISLWND,12.4,0,24.1,17,86400,3605*7",
-            Nmea.sentence("ISLWND,12.4,0,24.1,17,86400"),
-            Nmea.sentence("ISLWND,12.4,0,24.1,17,86400,3605,1"),
-            Nmea.sentence("ISLWND,12.4,2,24.1,17,86400,3605"),
-            Nmea.sentence("ISLWND,NaN,0,24.1,17,86400,3605"),
-            Nmea.sentence("ISLWND,1e3,0,24.1,17,86400,3605"),
-            Nmea.sentence("ISLWND,12.4,0,24.1,1.5,86400,3605"),
-            Nmea.sentence("ISLWND,12.4,0,24.1,17,4294967296,3605"),
-            Nmea.sentence("ISLWND,,0,24.1,17,86400,3605"),
+            "PXISWND,12.4,0,24.1,17,86400,3605*07",
+            "\$PXISWND,12.4,0,24.1,17,86400,3605",
+            "\$PXISWND,12.4,0,24.1,17,86400,3605*08",
+            "\$PXISWND,12.4,0,24.1,17,86400,3605*7",
+            Nmea.sentence("PXISWND,12.4,0,24.1,17,86400"),
+            Nmea.sentence("PXISWND,12.4,0,24.1,17,86400,3605,1"),
+            Nmea.sentence("PXISWND,12.4,2,24.1,17,86400,3605"),
+            Nmea.sentence("PXISWND,NaN,0,24.1,17,86400,3605"),
+            Nmea.sentence("PXISWND,1e3,0,24.1,17,86400,3605"),
+            Nmea.sentence("PXISWND,12.4,0,24.1,1.5,86400,3605"),
+            Nmea.sentence("PXISWND,12.4,0,24.1,17,4294967296,3605"),
+            Nmea.sentence("PXISWND,,0,24.1,17,86400,3605"),
         )
         bad.forEach { assertTrue(it, Nmea.parse(it) is ParseResult.Invalid) }
     }
 
     @Test fun ignoresOtherAddress() {
-        assertEquals(ParseResult.OtherSentence("ISLWNS"), Nmea.parse(Command.ZeroCounter.sentence))
+        assertEquals(ParseResult.OtherSentence("PXISWNS"), Nmea.parse(Command.ZeroCounter.sentence))
     }
 
     @Test fun buildsCommandsLikeFirmwareDocumentation() {
-        assertEquals("\$ISLWNS,K,0.42*4F", Command.SetFactor(BigDecimal("0.42")).sentence)
-        assertEquals("\$ISLWNS,C*73", Command.ZeroCounter.sentence)
-        assertEquals("\$ISLWNS,R*62", Command.Restart.sentence)
-        assertEquals(Nmea.sentence("ISLWNS,C,25"), Command.SetLength(25).sentence)
-        assertEquals(Nmea.sentence("ISLWNS,S,10"), Command.SetDebounce(10).sentence)
+        assertEquals("\$PXISWNS,K,0.42*0B", Command.SetFactor(BigDecimal("0.42")).sentence)
+        assertEquals("\$PXISWNS,C*37", Command.ZeroCounter.sentence)
+        assertEquals("\$PXISWNS,R*26", Command.Restart.sentence)
+        assertEquals(Nmea.sentence("PXISWNS,C,25"), Command.SetLength(25).sentence)
+        assertEquals(Nmea.sentence("PXISWNS,S,10"), Command.SetDebounce(10).sentence)
     }
 
     @Test fun commandsAndNumbersIgnoreDeviceLocale() {
         val saved = Locale.getDefault()
         try {
             Locale.setDefault(Locale.GERMANY)
-            assertEquals("\$ISLWNS,K,0.42*4F", Command.SetFactor(Inputs.factor("0,42")!!).sentence)
+            assertEquals("\$PXISWNS,K,0.42*0B", Command.SetFactor(Inputs.factor("0,42")!!).sentence)
             assertEquals("12.4", Format.oneDecimal(12.4))
         } finally {
             Locale.setDefault(saved)
