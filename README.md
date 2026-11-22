@@ -74,6 +74,10 @@ python3 tools/simulate_device.py --port 1458
 python3 tools/simulate_ydwg.py --start 40 --step 2 --max 60
 ```
 
+## Bluetooth-Skripte
+
+In [`tools/bluetooth/`](tools/bluetooth/README.md) liegen Python-Skripte für den Laptop oder Bordrechner. Sie lesen die Daly-BMS der Batterien und den Silentwind-Laderegler per Bluetooth LE aus und schalten die Bremse des Windgenerators. Dort sind auch die Protokolle beschrieben.
+
 ## Aufbau
 
 ```
