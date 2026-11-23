@@ -7,6 +7,15 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- Ohne MulticastLock filtern viele Geraete Broadcasts im Ruhezustand weg. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Windgenerator: Bluetooth LE zum Silentwind-Regler. Verbunden wird direkt ueber die MAC-Adresse,
+         ohne Suche, deshalb braucht es keine Standortberechtigung. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-feature
+        android:name="android.hardware.bluetooth_le"
+        android:required="false" />
 
     <application
         android:allowBackup="false"

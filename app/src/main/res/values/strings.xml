@@ -64,6 +64,7 @@
 
     <string name="page_chain">Ankerkette</string>
     <string name="page_n2k">NMEA2000</string>
+    <string name="page_wind">Windgenerator</string>
     <string name="page_position">Seite %1$d von %2$d, tippen oder wischen zum Wechseln</string>
 
     <string name="label_exhaust">Abgastemperatur</string>
@@ -72,6 +73,40 @@
     <string name="celsius_whole">%1$d °C</string>
     <string name="alarm_banner">Abgastemperatur %1$s °C, über dem Alarmwert %2$d °C</string>
     <string name="mute">Ton aus</string>
+
+    <string name="label_wind_power">Windleistung</string>
+    <string name="label_wind_voltage">Windspannung</string>
+    <string name="label_wind_current">Windstrom</string>
+    <string name="label_battery_voltage">Batteriespannung</string>
+    <string name="label_battery_current">Batteriestrom (berechnet)</string>
+    <string name="volt_value">%1$s V</string>
+    <string name="amp_value">%1$s A</string>
+    <string name="watt_value">%1$s W</string>
+    <string name="label_brake">Bremse</string>
+    <string name="brake_state_on">Eingeschaltet</string>
+    <string name="brake_state_off">Gelöst</string>
+    <string name="brake_choice_on">Ein</string>
+    <string name="brake_choice_off">Aus</string>
+    <string name="brake_send">Senden</string>
+    <string name="brake_sending_on">Bremse Ein wird gesendet …</string>
+    <string name="brake_sending_off">Bremse Aus wird gesendet …</string>
+    <string name="brake_confirmed_on">Bremse eingeschaltet, vom Regler bestätigt.</string>
+    <string name="brake_confirmed_off">Bremse gelöst, vom Regler bestätigt.</string>
+    <string name="brake_already_on">Die Bremse war bereits eingeschaltet.</string>
+    <string name="brake_already_off">Die Bremse war bereits gelöst.</string>
+    <string name="brake_not_confirmed">Der Regler hat den Befehl angenommen, meldet den neuen Zustand aber noch nicht. Bitte prüfen.</string>
+    <string name="brake_failed">Bremse nicht geschaltet: %1$s</string>
+    <string name="wind_connecting">Verbinde mit dem Regler …</string>
+    <string name="wind_connected">Verbunden. Ohne Bedienung wird nach %1$d s getrennt, damit andere Geräte den Regler nutzen können.</string>
+    <string name="wind_disconnected">Nicht verbunden.</string>
+    <string name="wind_idle">Getrennt nach %1$d s ohne Bedienung. Der Regler ist für andere Geräte frei.</string>
+    <string name="wind_user_disconnected">Getrennt. Der Regler ist für andere Geräte frei.</string>
+    <string name="wind_failed">Getrennt: %1$s</string>
+    <string name="wind_lost">Verbindung getrennt.</string>
+    <string name="wind_no_permission">Ohne die Berechtigung „Geräte in der Nähe“ kann die App den Regler nicht erreichen.</string>
+    <string name="wind_connect">Verbinden</string>
+    <string name="wind_disconnect">Trennen</string>
+    <string name="wind_not_connected">Nicht verbunden.</string>
     <string name="exhaust_stale">Keine Abgastemperatur seit %1$d s. Der Wert ist veraltet.</string>
     <string name="exhaust_waiting_sensor">Die Bridge sendet, aber der Abgassensor meldet sich nicht.</string>
 

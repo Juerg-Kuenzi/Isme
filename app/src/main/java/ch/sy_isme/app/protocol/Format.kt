@@ -5,6 +5,8 @@ import java.util.Locale
 object Format {
     fun oneDecimal(value: Double): String = "%.1f".format(Locale.ROOT, value)
 
+    fun twoDecimals(value: Double): String = "%.2f".format(Locale.ROOT, value)
+
     /** Beispiele: 01:00:05, 1 d 00:00:00 */
     fun duration(seconds: Long): String {
         val days = seconds / 86_400
