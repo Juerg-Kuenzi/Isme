@@ -4,7 +4,14 @@ on:
   push:
     branches: [main]
   pull_request:
+  release:
+    types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release-Tag, an den die APK angehaengt wird (z. B. v2.3.1). Leer: nur bauen."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -17,8 +24,32 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      release_tag: ${{ steps.tag.outputs.tag }}
     steps:
+      # Bei einem Release (oder von Hand mit Tag) genau den Stand des Tags bauen.
+      - name: Release-Tag bestimmen
+        id: tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: echo "tag=${RELEASE_TAG:-$INPUT_TAG}" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag || github.ref }}
+
+      - name: Version passt zum Tag
+        if: steps.tag.outputs.tag != ''
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          version=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts)
+          echo "versionName $version, Tag $TAG"
+          if [ "v$version" != "$TAG" ] && [ "$version" != "$TAG" ]; then
+            echo "::error::Der Tag $TAG passt nicht zur versionName $version in app/build.gradle.kts."
+            exit 1
+          fi
 
       - uses: actions/setup-java@v4
         with:
@@ -72,6 +103,10 @@ jobs:
             echo "::error::Die APK ist nicht mit dem festen Schluessel signiert. Erwartet: $EXPECTED_CERT_SHA256"
             exit 1
           fi
+          if [ -n "${{ steps.tag.outputs.tag }}" ] && [ "$actual" != "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::Die APK ist nicht mit dem festen Schluessel signiert. Erwartet: $EXPECTED_CERT_SHA256"
+            exit 1
+          fi
           rm -f "$SIGNING_KEYSTORE_FILE"
 
       - uses: actions/upload-artifact@v4
@@ -88,3 +123,25 @@ jobs:
             app/build/reports/tests/
             app/build/reports/lint-results-debug.html
           if-no-files-found: ignore
+
+  # Haengt die APK an den Release. Eigener Job, damit nur er Schreibrechte hat.
+  release:
+    needs: build
+    if: needs.build.outputs.release_tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Isme-debug-apk
+          path: apk
+
+      - name: APK an den Release haengen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build.outputs.release_tag }}
+        run: |
+          file="Isme-${TAG#v}.apk"
+          mv apk/*.apk "$file"
+          gh release upload "$TAG" "$file" --clobber --repo "$GITHUB_REPOSITORY"
