@@ -214,13 +214,25 @@ class SilentwindLink(
         }
         val g = gatt ?: throw InterruptedException()
 
-        if (!g.discoverServices()) throw IOException("Dienste des Reglers nicht lesbar.")
-        val services = await<Event.Services>(SERVICES_TIMEOUT_MS)
-        if (services.status != BluetoothGatt.GATT_SUCCESS) throw IOException("Dienste des Reglers nicht lesbar.")
-        val notifyChar = g.services.firstNotNullOfOrNull { it.getCharacteristic(NOTIFY_UUID) }
+        // Manche Geraete (z. B. Samsung mit Android 11) liefern direkt nach dem Verbinden oder aus
+        // ihrem Zwischenspeicher eine veraltete Dienstliste. Dann den Speicher leeren und neu fragen.
+        Thread.sleep(SETTLE_MS)
+        discoverServices(g)
+        var notifyChar = g.services.firstNotNullOfOrNull { it.getCharacteristic(NOTIFY_UUID) }
         writeChar = g.services.firstNotNullOfOrNull { it.getCharacteristic(WRITE_UUID) }
         if (notifyChar == null || writeChar == null) {
-            throw IOException("Der Regler bietet den erwarteten Bluetooth-Dienst nicht an.")
+            refreshServiceCache(g)
+            Thread.sleep(REFRESH_WAIT_MS)
+            discoverServices(g)
+            notifyChar = g.services.firstNotNullOfOrNull { it.getCharacteristic(NOTIFY_UUID) }
+            writeChar = g.services.firstNotNullOfOrNull { it.getCharacteristic(WRITE_UUID) }
+        }
+        if (notifyChar == null || writeChar == null) {
+            val found = g.services.joinToString(", ") { shortUuid(it.uuid) }.ifEmpty { "keine" }
+            throw IOException(
+                "Der Regler bietet den erwarteten Bluetooth-Dienst nicht an (gefunden: $found). " +
+                    "Bluetooth aus- und einschalten oder die Kopplung mit dem Regler aufheben hilft oft.",
+            )
         }
 
         // Ein Rahmen hat 42 Bytes. Gelingt eine groessere MTU nicht, wird in Stuecken gesendet.
@@ -252,6 +264,32 @@ class SilentwindLink(
         if (!started || await<Event.DescriptorWritten>(OP_TIMEOUT_MS).status != BluetoothGatt.GATT_SUCCESS) {
             throw IOException("Benachrichtigungen nicht möglich.")
         }
+    }
+
+    private fun discoverServices(g: BluetoothGatt) {
+        events.removeIf { it is Event.Services }
+        if (!g.discoverServices()) throw IOException("Dienste des Reglers nicht lesbar.")
+        val services = await<Event.Services>(SERVICES_TIMEOUT_MS)
+        if (services.status != BluetoothGatt.GATT_SUCCESS) throw IOException("Dienste des Reglers nicht lesbar.")
+    }
+
+    /**
+     * Leert Androids Zwischenspeicher der Dienstliste. Die Methode ist nicht oeffentlich, wird aber
+     * von vielen BLE-Bibliotheken genutzt. Fehlt sie, bleibt es beim zweiten Versuch ohne Leeren.
+     */
+    @SuppressLint("DiscouragedPrivateApi", "PrivateApi", "SoonBlockedPrivateApi")
+    private fun refreshServiceCache(g: BluetoothGatt) {
+        try {
+            g.javaClass.getMethod("refresh").invoke(g)
+        } catch (_: Exception) {
+            // nicht verfuegbar
+        }
+    }
+
+    /** 0000180a-0000-1000-8000-00805f9b34fb wird zu 180a, eigene UUIDs bleiben gekuerzt erkennbar */
+    private fun shortUuid(uuid: UUID): String {
+        val s = uuid.toString()
+        return if (s.endsWith("-0000-1000-8000-00805f9b34fb") && s.startsWith("0000")) s.substring(4, 8) else s.substring(0, 13)
     }
 
     /** Sendet eine Anfrage und wartet auf die Antwort mit dem erwarteten Befehl. Null bei Zeitablauf. */
@@ -381,6 +419,8 @@ class SilentwindLink(
         private const val BRAKE_ATTEMPTS = 3
         private const val CONNECT_TIMEOUT_MS = 20_000L
         private const val SERVICES_TIMEOUT_MS = 10_000L
+        private const val SETTLE_MS = 600L
+        private const val REFRESH_WAIT_MS = 1_000L
         private const val MTU_TIMEOUT_MS = 5_000L
         private const val OP_TIMEOUT_MS = 3_000L
         private const val RESPONSE_TIMEOUT_MS = 3_000L
