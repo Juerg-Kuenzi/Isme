@@ -50,6 +50,13 @@ Mit Android Studio öffnen, oder mit JDK 17 und installiertem Android SDK:
 
 Die APK liegt danach unter `app/build/outputs/apk/debug/`. Der Workflow [`android.yml`](.github/workflows/android.yml) macht bei jedem Push dasselbe und stellt die APK als Artefakt bereit.
 
+### Release
+
+1. In `app/build.gradle.kts` `versionCode` erhöhen und `versionName` setzen, zum Beispiel `2.3.1`.
+2. Auf GitHub einen Release mit dem Tag `v2.3.1` veröffentlichen.
+
+Der Workflow baut dann genau diesen Tag und hängt `Isme-2.3.1.apk` an den Release. Er bricht ab, wenn Tag und `versionName` nicht übereinstimmen oder die APK nicht mit dem festen Schlüssel signiert ist. Für einen bestehenden Release lässt er sich unter *Actions > Android > Run workflow* mit dem Tag von Hand starten.
+
 ## Signaturschlüssel
 
 Android installiert ein Update nur, wenn die neue APK mit demselben Schlüssel signiert ist wie die installierte App. Der Workflow signiert deshalb mit einem festen Schlüssel aus zwei Repository-Secrets (*Settings > Secrets and variables > Actions*):
