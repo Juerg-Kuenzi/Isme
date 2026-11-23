@@ -23,6 +23,15 @@
         <item name="android:textStyle">bold</item>
     </style>
 
+    <!-- Wahltasten Ein/Aus der Bremse: gross, damit sie auch an Deck sicher getroffen werden. -->
+    <style name="ChoiceButton" parent="ActionButton">
+        <item name="android:background">@drawable/choice_button</item>
+        <item name="android:minHeight">72dp</item>
+        <item name="android:textColor">@color/choice_text</item>
+        <item name="android:textSize">24sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
     <style name="MenuRow">
         <item name="android:background">?android:attr/selectableItemBackground</item>
         <item name="android:gravity">center_vertical|start</item>

@@ -4,6 +4,7 @@ import android.animation.ValueAnimator
 import android.app.Activity
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.media.AudioManager
 import android.media.ToneGenerator
@@ -12,6 +13,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -28,6 +30,7 @@ import android.widget.PopupMenu
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.ViewFlipper
+import ch.sy_isme.app.net.SilentwindLink
 import ch.sy_isme.app.net.UdpLink
 import ch.sy_isme.app.protocol.ChainDirection
 import ch.sy_isme.app.protocol.Command
@@ -38,6 +41,7 @@ import ch.sy_isme.app.protocol.N2kTemperature
 import ch.sy_isme.app.protocol.Nmea
 import ch.sy_isme.app.protocol.ParseResult
 import ch.sy_isme.app.protocol.TemperatureSelector
+import ch.sy_isme.app.protocol.WindData
 import ch.sy_isme.app.protocol.YdRaw
 import java.io.IOException
 import java.net.InetAddress
@@ -82,6 +86,18 @@ class MainActivity : Activity() {
     private lateinit var detailSend: Button
     private lateinit var detailMessage: TextView
     private lateinit var detailConnection: TextView
+    private lateinit var windStatus: TextView
+    private lateinit var windPowerValue: TextView
+    private lateinit var windVoltageValue: TextView
+    private lateinit var windCurrentValue: TextView
+    private lateinit var batteryVoltageValue: TextView
+    private lateinit var batteryCurrentValue: TextView
+    private lateinit var brakeStateValue: TextView
+    private lateinit var brakeChoiceOn: Button
+    private lateinit var brakeChoiceOff: Button
+    private lateinit var brakeSend: Button
+    private lateinit var brakeMessage: TextView
+    private lateinit var windConnect: Button
 
     private var port = DEFAULT_PORT
     private var n2kPort = DEFAULT_N2K_PORT
@@ -92,6 +108,21 @@ class MainActivity : Activity() {
     private var n2kLink: UdpLink? = null
     private var tone: ToneGenerator? = null
     private var lastToneAt = 0L
+
+    // Windgenerator. Der Regler erlaubt nur eine Bluetooth-Verbindung gleichzeitig. Verbunden wird nur,
+    // solange die Seite sichtbar ist und bedient wird; sonst wird sofort getrennt.
+    private var started = false
+    private var windLink: SilentwindLink? = null
+    private var windState = SilentwindLink.State.CLOSED
+    private var windData: WindData? = null
+    private var windDataAt = 0L
+    private var windBusy = false
+    private var windHeld = false
+    private var windHeldText: String? = null
+    private var brakeMessageText: String? = null
+    private var brakeChoice: Boolean? = null
+    private var lastInteraction = 0L
+    private var permissionAsked = false
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -187,6 +218,18 @@ class MainActivity : Activity() {
         detailSend = findViewById(R.id.detail_send)
         detailMessage = findViewById(R.id.detail_message)
         detailConnection = findViewById(R.id.detail_connection)
+        windStatus = findViewById(R.id.wind_status)
+        windPowerValue = findViewById(R.id.wind_power_value)
+        windVoltageValue = findViewById(R.id.wind_voltage_value)
+        windCurrentValue = findViewById(R.id.wind_current_value)
+        batteryVoltageValue = findViewById(R.id.battery_voltage_value)
+        batteryCurrentValue = findViewById(R.id.battery_current_value)
+        brakeStateValue = findViewById(R.id.brake_state_value)
+        brakeChoiceOn = findViewById(R.id.brake_choice_on)
+        brakeChoiceOff = findViewById(R.id.brake_choice_off)
+        brakeSend = findViewById(R.id.brake_send)
+        brakeMessage = findViewById(R.id.brake_message)
+        windConnect = findViewById(R.id.wind_connect)
     }
 
     private fun setUpNavigation() {
@@ -224,9 +267,26 @@ class MainActivity : Activity() {
             render()
         }
         chainAlarmBanner.setOnClickListener { showPage(PAGE_N2K) }
+
+        brakeChoiceOn.setOnClickListener { chooseBrake(true) }
+        brakeChoiceOff.setOnClickListener { chooseBrake(false) }
+        brakeSend.setOnClickListener { sendBrake() }
+        windConnect.setOnClickListener {
+            if (windLink != null) {
+                windHeld = true
+                windHeldText = getString(R.string.wind_user_disconnected)
+                stopWind()
+            } else {
+                windHeld = false
+                windHeldText = null
+                lastInteraction = SystemClock.elapsedRealtime()
+                updateWindLink()
+            }
+            render()
+        }
     }
 
-    /** Zwei Seiten, gewechselt durch seitliches Wischen oder Tippen auf die Punkte. */
+    /** Drei Seiten, gewechselt durch seitliches Wischen oder Tippen auf die Punkte. */
     private fun setUpPages() {
         pager.displayedChild = session.page
         val threshold = SWIPE_MIN_DP * resources.displayMetrics.density
@@ -244,6 +304,7 @@ class MainActivity : Activity() {
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        lastInteraction = SystemClock.elapsedRealtime()
         if (session.screen == Screen.MAIN) gestures.onTouchEvent(event)
         return super.dispatchTouchEvent(event)
     }
@@ -260,6 +321,13 @@ class MainActivity : Activity() {
         }
         session.page = page
         pager.displayedChild = page
+        if (page == PAGE_WIND) {
+            // Beim Aufrufen der Seite wieder verbinden, auch nach einer Trennung wegen Inaktivitaet.
+            windHeld = false
+            windHeldText = null
+            lastInteraction = SystemClock.elapsedRealtime()
+        }
+        updateWindLink()
         render()
     }
 
@@ -296,6 +364,7 @@ class MainActivity : Activity() {
         if (screen.isDetail && screen != session.screen) session.clearRestoredNotice()
         session.screen = screen
         if (screen.isDetail) configureDetail(screen)
+        updateWindLink()
         render()
     }
 
@@ -440,6 +509,7 @@ class MainActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
+        started = true
         multicastLock.acquire()
         tone = try {
             ToneGenerator(AudioManager.STREAM_ALARM, ToneGenerator.MAX_VOLUME)
@@ -470,9 +540,13 @@ class MainActivity : Activity() {
         networkCallback = callback
         connectivity.requestNetwork(request, callback, main)
         main.post(ticker)
+        updateWindLink()
     }
 
     override fun onStop() {
+        // App im Hintergrund oder geschlossen: Regler sofort freigeben.
+        started = false
+        stopWind()
         main.removeCallbacks(ticker)
         networkCallback?.let(connectivity::unregisterNetworkCallback)
         networkCallback = null
@@ -572,17 +646,25 @@ class MainActivity : Activity() {
         val now = SystemClock.elapsedRealtime()
         session.onTick(now)
         session.exhaust.update(now, alarmLimit.toDouble())
+        checkWindIdle(now)
         renderPageHeader()
         renderMain(now)
         renderN2k(now)
+        renderWind(now)
         renderInfo()
         if (session.screen.isDetail) renderDetail(now)
         soundAlarm(now)
     }
 
     private fun renderPageHeader() {
-        pageTitle.setText(if (session.page == PAGE_CHAIN) R.string.page_chain else R.string.page_n2k)
-        pageDots.text = if (session.page == PAGE_CHAIN) "● ○" else "○ ●"
+        pageTitle.setText(
+            when (session.page) {
+                PAGE_CHAIN -> R.string.page_chain
+                PAGE_N2K -> R.string.page_n2k
+                else -> R.string.page_wind
+            },
+        )
+        pageDots.text = (0 until PAGE_COUNT).joinToString(" ") { if (it == session.page) "●" else "○" }
         pageDots.contentDescription = getString(R.string.page_position, session.page + 1, PAGE_COUNT)
     }
 
@@ -723,6 +805,185 @@ class MainActivity : Activity() {
         }
     }
 
+    // ------------------------------------------------------------------
+    // Windgenerator
+    // ------------------------------------------------------------------
+
+    /** Verbindet nur, solange die Seite Windgenerator sichtbar ist und die App im Vordergrund laeuft. */
+    private fun updateWindLink() {
+        val wanted = started && session.screen == Screen.MAIN && session.page == PAGE_WIND && !windHeld
+        if (!wanted) {
+            if (windLink != null) stopWind()
+            return
+        }
+        if (windLink != null) return
+        if (!hasBluetoothPermission()) {
+            if (!permissionAsked && Build.VERSION.SDK_INT >= 31) {
+                permissionAsked = true
+                requestPermissions(arrayOf(PERMISSION_CONNECT), REQUEST_BLUETOOTH)
+            } else {
+                windHeld = true
+                windHeldText = getString(R.string.wind_no_permission)
+            }
+            return
+        }
+        startWind()
+    }
+
+    private fun hasBluetoothPermission(): Boolean =
+        Build.VERSION.SDK_INT < 31 || checkSelfPermission(PERMISSION_CONNECT) == PackageManager.PERMISSION_GRANTED
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_BLUETOOTH) return
+        if (grantResults.firstOrNull() != PackageManager.PERMISSION_GRANTED) {
+            windHeld = true
+            windHeldText = getString(R.string.wind_no_permission)
+        }
+        lastInteraction = SystemClock.elapsedRealtime()
+        updateWindLink()
+        render()
+    }
+
+    private fun startWind() {
+        windState = SilentwindLink.State.CONNECTING
+        windData = null
+        brakeChoice = null
+        brakeMessageText = null
+        windBusy = false
+        lastInteraction = SystemClock.elapsedRealtime()
+        var created: SilentwindLink? = null
+        val listener = object : SilentwindLink.Listener {
+            override fun onStateChanged(state: SilentwindLink.State, reason: String?) {
+                main.post {
+                    if (windLink !== created) return@post
+                    windState = state
+                    if (state == SilentwindLink.State.CLOSED) {
+                        // Nicht selbst neu verbinden: ein anderes Geraet koennte den Regler brauchen.
+                        windLink = null
+                        windHeld = true
+                        windHeldText = if (reason != null) {
+                            getString(R.string.wind_failed, reason)
+                        } else {
+                            getString(R.string.wind_lost)
+                        }
+                    }
+                    render()
+                }
+            }
+
+            override fun onLive(data: WindData) {
+                main.post {
+                    if (windLink !== created) return@post
+                    windData = data
+                    windDataAt = SystemClock.elapsedRealtime()
+                    if (brakeChoice == null) brakeChoice = data.brakeActive
+                    render()
+                }
+            }
+
+            override fun onBrakeResult(result: SilentwindLink.BrakeResult) {
+                main.post {
+                    if (windLink !== created) return@post
+                    windBusy = false
+                    brakeMessageText = brakeResultText(result)
+                    windData?.let { brakeChoice = it.brakeActive }
+                    render()
+                }
+            }
+        }
+        created = SilentwindLink(this, SilentwindLink.DEFAULT_ADDRESS, listener)
+        windLink = created
+        created.start()
+    }
+
+    /** Trennt sofort und gibt den Regler fuer andere Geraete frei. */
+    private fun stopWind() {
+        val link = windLink ?: return
+        windLink = null
+        link.stop()
+        windState = SilentwindLink.State.CLOSED
+        if (windBusy) {
+            windBusy = false
+            brakeMessageText = getString(R.string.brake_failed, getString(R.string.wind_lost))
+        }
+    }
+
+    private fun checkWindIdle(now: Long) {
+        if (windLink == null || windBusy) return
+        if (now - lastInteraction < WIND_IDLE_MS) return
+        windHeld = true
+        windHeldText = getString(R.string.wind_idle, (WIND_IDLE_MS / 1000).toInt())
+        stopWind()
+    }
+
+    private fun chooseBrake(on: Boolean) {
+        brakeChoice = on
+        brakeMessageText = null
+        render()
+    }
+
+    private fun sendBrake() {
+        val on = brakeChoice ?: return
+        val link = windLink
+        if (link == null || windState != SilentwindLink.State.CONNECTED) {
+            brakeMessageText = getString(R.string.wind_not_connected)
+        } else {
+            windBusy = true
+            brakeMessageText = getString(if (on) R.string.brake_sending_on else R.string.brake_sending_off)
+            link.requestBrake(on)
+        }
+        render()
+    }
+
+    private fun brakeResultText(result: SilentwindLink.BrakeResult): String = when (result) {
+        is SilentwindLink.BrakeResult.Confirmed ->
+            getString(if (result.on) R.string.brake_confirmed_on else R.string.brake_confirmed_off)
+        is SilentwindLink.BrakeResult.AlreadySet ->
+            getString(if (result.on) R.string.brake_already_on else R.string.brake_already_off)
+        is SilentwindLink.BrakeResult.NotConfirmed -> getString(R.string.brake_not_confirmed)
+        is SilentwindLink.BrakeResult.Failed -> getString(R.string.brake_failed, result.reason)
+    }
+
+    private fun renderWind(now: Long) {
+        val connected = windLink != null && windState == SilentwindLink.State.CONNECTED
+        windStatus.text = when {
+            windLink != null && windState == SilentwindLink.State.CONNECTING -> getString(R.string.wind_connecting)
+            connected -> getString(R.string.wind_connected, (WIND_IDLE_MS / 1000).toInt())
+            else -> windHeldText ?: getString(R.string.wind_disconnected)
+        }
+        windConnect.setText(if (windLink != null) R.string.wind_disconnect else R.string.wind_connect)
+
+        val data = windData
+        val fresh = connected && data != null && now - windDataAt < WIND_FRESH_MS
+        val color = getColor(if (fresh) R.color.ink else R.color.muted)
+        val empty = getString(R.string.no_value)
+        listOf(windPowerValue, windVoltageValue, windCurrentValue, batteryVoltageValue, batteryCurrentValue,
+            brakeStateValue).forEach { it.setTextColor(color) }
+        if (data == null) {
+            listOf(windPowerValue, windVoltageValue, windCurrentValue, batteryVoltageValue, batteryCurrentValue,
+                brakeStateValue).forEach { it.text = empty }
+        } else {
+            windPowerValue.text = getString(R.string.watt_value, Format.oneDecimal(data.windWatt))
+            windVoltageValue.text = getString(R.string.volt_value, Format.oneDecimal(data.windVolt))
+            windCurrentValue.text = getString(R.string.amp_value, Format.twoDecimals(data.windAmp))
+            batteryVoltageValue.text = getString(R.string.volt_value, Format.oneDecimal(data.batteryVolt))
+            batteryCurrentValue.text = getString(R.string.amp_value, Format.twoDecimals(data.batteryAmp))
+            brakeStateValue.setText(if (data.brakeActive) R.string.brake_state_on else R.string.brake_state_off)
+        }
+
+        // Bedienen nur mit aktuellen Werten: sonst ist unklar, was der Regler gerade tut.
+        val operable = fresh && !windBusy
+        brakeChoiceOn.isEnabled = operable
+        brakeChoiceOff.isEnabled = operable
+        brakeChoiceOn.isSelected = brakeChoice == true
+        brakeChoiceOff.isSelected = brakeChoice == false
+        val choice = brakeChoice
+        brakeSend.isEnabled = operable && choice != null && data != null && choice != data.brakeActive
+        brakeMessage.text = brakeMessageText
+        brakeMessage.visibility = if (brakeMessageText == null) View.GONE else View.VISIBLE
+    }
+
     private companion object {
         const val DEFAULT_PORT = 1458
         const val DEFAULT_N2K_PORT = 1457
@@ -739,7 +1000,12 @@ class MainActivity : Activity() {
         const val SWIPE_MIN_DP = 80
         const val PAGE_CHAIN = 0
         const val PAGE_N2K = 1
-        const val PAGE_COUNT = 2
+        const val PAGE_WIND = 2
+        const val PAGE_COUNT = 3
+        const val WIND_IDLE_MS = 60_000L
+        const val WIND_FRESH_MS = 3_000L
+        const val REQUEST_BLUETOOTH = 1
+        const val PERMISSION_CONNECT = "android.permission.BLUETOOTH_CONNECT"
         const val MENU_SETTINGS = 1
         const val MENU_INFO = 2
     }

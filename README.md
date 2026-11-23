@@ -4,9 +4,10 @@ Android-App für die Segelyacht Ismé: für den [ChainCounter](https://github.co
 
 ## Funktionen
 
-- **Zwei Seiten**, gewechselt durch seitliches Wischen oder Tippen auf die Punkte oben rechts. Jede Seite warnt nur über ihre eigene Datenquelle.
+- **Drei Seiten**, gewechselt durch seitliches Wischen oder Tippen auf die Punkte oben rechts. Jede Seite warnt nur über ihre eigene Datenquelle.
 - **Seite Ankerkette:** Kettenlänge, Richtung (Auf oder Ab) und Speisung. Kommt 3 s lang kein gültiger Satz, erscheint unter den Daten eine Warnung und die Länge wird abgeblendet.
 - **Seite NMEA2000:** Abgastemperatur und Alarmwert. Kommt 6 s lang kein Wert, erscheint eine Warnung.
+- **Seite Windgenerator:** Live-Werte des Silentwind-Reglers per Bluetooth (Windleistung, Wind- und Batteriespannung, Windstrom, berechneter Batteriestrom) und die Bremse. Siehe Abschnitt [Windgenerator](#windgenerator).
 - **Abgasalarm:** Liegt die Temperatur über dem Alarmwert (Standard 50 °C), erscheint ein Alarmbalken auf beiden Seiten und alle 2 s ertönt ein Ton auf dem Alarm-Lautstärkekanal. „Ton aus“ schaltet den Ton bis zum nächsten Alarm stumm. Der Alarm endet 1 °C unter dem Alarmwert.
 - **Menü > Einstellungen:** Hell/Dunkel, Zähler nullen (`C`), Länge setzen (`C,<m>`), Port ChainCounter, Entprellzeit (`S,<ms>`), Umrechnungsfaktor (`K,<m/U>`), Restart (`R`, ab Firmware 1.2.0), Port NMEA2000, Alarmwert Abgas
 - **Menü > Informationen:** Systemstarts, Laufzeiten, Adressen von ChainCounter und Bridge, App-Version
@@ -28,6 +29,16 @@ Factory Reset (`F`) ist bewusst nicht enthalten. Die App läuft nur im Vordergru
 - **Abgastemperatur:** PGN 130316 „Temperature, Extended Range“ mit Quelle 14 (Exhaust Gas) und Instanz 0, beim Yacht-Devices-Sensor mit `YD:TYPE 14` eingestellt. PGN 130312 dient nur als Ersatz, solange keine 130316 kommt, weil sie nur bis etwa 382 °C reicht. Der Sensor wird an Quelle und Instanz erkannt, nicht an der Busadresse.
 - **Doppelte Pakete:** Identische Pakete innerhalb von 50 ms werden verworfen.
 - **Ton:** Nur solange die App im Vordergrund läuft. Die Lautstärke ist die Alarm-Lautstärke des Telefons.
+
+## Windgenerator
+
+Die App verbindet sich per Bluetooth LE mit dem Silentwind-Regler an der Adresse `34:81:F4:82:77:78` (`SilentwindLink.DEFAULT_ADDRESS`). Protokoll und Sicherungen sind dieselben wie in [`tools/bluetooth/silentwind_reader.py`](tools/bluetooth/README.md).
+
+- **Nur kurz verbunden:** Der Regler erlaubt nur eine Verbindung gleichzeitig. Die App verbindet sich nur, solange die Seite Windgenerator sichtbar ist. Sie trennt sofort beim Wechsel auf eine andere Seite, beim Öffnen des Menüs, wenn die App in den Hintergrund geht oder geschlossen wird, und nach 60 s ohne Bedienung. Nach einer Trennung oder einem Fehler verbindet sie sich nicht selbst neu, sondern erst über „Verbinden“ oder beim erneuten Aufrufen der Seite.
+- **Live-Werte:** jede Sekunde, solange verbunden. Kommt 3 s lang nichts, werden die Werte abgeblendet und die Bremse ist gesperrt.
+- **Bremse:** Oben steht der Zustand, den der Regler meldet. Darunter wählt man „Ein“ oder „Aus“ und bestätigt mit „Senden“. „Senden“ ist nur aktiv, wenn die Wahl vom gemeldeten Zustand abweicht.
+- **Schreiben der Bremse:** Der Regler kennt nur den ganzen Einstellungsblock. Die App liest ihn deshalb unmittelbar vor dem Schreiben frisch, schreibt nie einen leeren oder ungültigen Block, ändert nur Bit `0x04` in Byte 1 und schreibt den Block zurück. Danach prüft sie das Echo und das Bit `0x40` in den Live-Werten. Bei Zeitüberschreitung versucht sie es bis zu dreimal, jedes Mal mit frisch gelesenem Block.
+- **Berechtigung:** Ab Android 12 fragt die App einmal nach „Geräte in der Nähe“. Sie verbindet direkt über die Adresse ohne Suche und braucht deshalb keine Standortberechtigung.
 
 ## Bauen
 
@@ -89,6 +100,8 @@ app/src/main/java/ch/sy_isme/app/
   protocol/Nmea.kt     Checksumme und Parser für $PXISWND
   protocol/Commands.kt Kommandos ($PXISWNS) und Prüfung der Eingaben
   protocol/Format.kt   Zahlen und Laufzeiten formatieren
+  protocol/Silentwind.kt  Silentwind-Protokoll: Rahmen, Live-Werte, Bremsen-Bit
+  net/SilentwindLink.kt   Bluetooth-LE-Verbindung zum Silentwind-Regler
   protocol/YdRaw.kt    YDWG-02-RAW-Format, PGN aus der CAN-ID
   protocol/N2kTemperature.kt  PGN 130312/130316, Auswahl des Sensors
 app/src/test/          JUnit-Tests für Protokoll, Datenausfall und UDP (Loopback)
